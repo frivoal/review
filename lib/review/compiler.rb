@@ -235,7 +235,7 @@ module ReVIEW
     def do_compile
       f = LineInput.new(Preprocessor::Strip.new(StringIO.new(@chapter.content)))
       @strategy.bind self, @chapter, Location.new(@chapter.basename, f)
-      tagged_section_init
+      section_init
       while f.next?
         case f.peek
         when /\A\#@/
@@ -275,7 +275,7 @@ module ReVIEW
           compile_paragraph f
         end
       end
-      close_all_tagged_section
+      close_all_section
     end
 
     def compile_headline(line)
@@ -288,15 +288,15 @@ module ReVIEW
       index = level - 1
       if tag
         if tag !~ /\A\//
-          close_current_tagged_section(level)
-          open_tagged_section(tag, level, label, caption)
+          close_current_section(level)
+          open_section(tag, level, label, caption)
         else
           open_tag = tag[1..-1]
-          prev_tag_info = @tagged_section.pop
+          prev_tag_info = @section.pop
           unless prev_tag_info.first == open_tag
             raise CompileError, "#{open_tag} is not opened."
           end
-          close_tagged_section(*prev_tag_info)
+          close_section(*prev_tag_info)
         end
       else
         if @headline_indexs.size > (index + 1)
@@ -304,14 +304,18 @@ module ReVIEW
         end
         @headline_indexs[index] = 0 if @headline_indexs[index].nil?
         @headline_indexs[index] += 1
-        close_current_tagged_section(level)
-        @strategy.headline level, label, caption
+        close_current_section(level)
+        if @strategy.respond_to?("section_begin")
+	  open_section nil, level, label, caption
+	else
+          @strategy.headline level, label, caption
+	end
       end
     end
 
-    def close_current_tagged_section(level)
-      while @tagged_section.last and @tagged_section.last[1] >= level
-        close_tagged_section(* @tagged_section.pop)
+    def close_current_section(level)
+      while @section.last and @section.last[1] >= level
+        close_section(* @section.pop)
       end
     end
 
@@ -319,23 +323,31 @@ module ReVIEW
       @strategy.headline level, label, caption
     end
 
-    def tagged_section_init
-      @tagged_section = []
+    def section_init
+      @section = []
     end
 
-    def open_tagged_section(tag, level, label, caption)
-      mid = "#{tag}_begin"
+    def open_section(tag, level, label, caption)
+      if tag
+        mid = "#{tag}_begin"
+      else
+        mid = "section_begin"
+      end
       unless @strategy.respond_to?(mid)
         error "strategy does not support tagged section: #{tag}"
         headline level, label, caption
         return
       end
-      @tagged_section.push [tag, level]
+      @section.push [tag, level]
       @strategy.__send__ mid, level, label, caption
     end
 
-    def close_tagged_section(tag, level)
-      mid = "#{tag}_end"
+    def close_section(tag, level)
+      if tag
+        mid = "#{tag}_end"
+      else
+        mid = "section_end"
+      end
       if @strategy.respond_to?(mid)
         @strategy.__send__ mid, level
       else
@@ -343,9 +355,9 @@ module ReVIEW
       end
     end
 
-    def close_all_tagged_section
-      until @tagged_section.empty?
-        close_tagged_section(* @tagged_section.pop)
+    def close_all_section
+      until @section.empty?
+        close_section(* @section.pop)
       end
     end
 
